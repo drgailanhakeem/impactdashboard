@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-from fastkml.kml import Folder, Placemark
+from fastkml import KML  # Import KML class directly
 from shapely.geometry import Point, LineString, Polygon
 import requests
 
@@ -63,7 +63,7 @@ def parse_kml(kml_url):
     kml_data = response.text
 
     try:
-        k = kml.KML()
+        k = KML()  # Use KML class from fastkml
         k.from_string(kml_data)
 
         geometries = []
