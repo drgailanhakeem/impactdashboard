@@ -45,6 +45,8 @@ def display_token_details():
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
 
+from fastkml.kml import Folder, Placemark
+
 def parse_kml(kml_url):
     """Parses the KML file and extracts polygon data."""
     if "drive.google.com" in kml_url:
@@ -67,10 +69,15 @@ def parse_kml(kml_url):
         k.from_string(kml_data)
 
         polygons = []
-        for feature in list(k.features()):
-            for placemark in list(feature.features()):
-                if isinstance(placemark.geometry, Polygon):
-                    polygons.append(placemark.geometry)
+        # Parse through KML features, handling Folders and Placemarks
+        for feature in k.features():
+            # If the feature is a Folder, check its contents
+            if isinstance(feature, Folder):
+                for subfeature in feature.features():
+                    if isinstance(subfeature, Placemark) and isinstance(subfeature.geometry, Polygon):
+                        polygons.append(subfeature.geometry)
+            elif isinstance(feature, Placemark) and isinstance(feature.geometry, Polygon):
+                polygons.append(feature.geometry)
 
         return polygons
     except Exception as e:
