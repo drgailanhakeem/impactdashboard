@@ -2,8 +2,8 @@ import pandas as pd
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-from fastkml import kml
-from shapely.geometry import Polygon
+from fastkml.kml import KML, Folder, Placemark  # Import the necessary KML classes
+from shapely.geometry import Polygon, Point, LineString
 import requests
 
 # Define the URL to your CSV file hosted on GitHub 
@@ -46,7 +46,7 @@ def display_token_details():
         st.error(f"An error occurred: {str(e)}")
 
 def parse_kml(kml_url):
-    """Parses the KML file and extracts polygon data."""
+    """Parses the KML file and extracts all geometries (polygons, lines, points)."""
     if "drive.google.com" in kml_url:
         # Convert the Google Drive link to a direct download link
         file_id = kml_url.split("/d/")[1].split("/")[0]
@@ -63,22 +63,29 @@ def parse_kml(kml_url):
     kml_data = response.text
 
     try:
-        k = kml.KML()
+        k = KML()
         k.from_string(kml_data)
 
-        polygons = []
-        for feature in list(k.features()):
-            for placemark in list(feature.features()):
-                if isinstance(placemark.geometry, Polygon):
-                    polygons.append(placemark.geometry)
+        geometries = []
+        # Parse through KML features, handling Folders and Placemarks
+        for feature in k.features():
+            if isinstance(feature, Folder):
+                for subfeature in feature.features():
+                    if isinstance(subfeature, Placemark):
+                        geometries.append(subfeature.geometry)
+            elif isinstance(feature, Placemark):
+                geometries.append(feature.geometry)
 
-        return polygons
+        # Debugging output to see what geometries were parsed
+        st.write(f"Parsed Geometries: {geometries}")
+
+        return geometries
     except Exception as e:
         st.error(f"An error occurred while parsing the KML file: {str(e)}")
         return []
 
 def display_detailed_map():
-    st.write("### Detailed Map with Polygon Data from KML:")
+    st.write("### Detailed Map with All KML Data:")
 
     # Read the CSV data
     df = pd.read_csv(CSV_URL)
@@ -100,13 +107,23 @@ def display_detailed_map():
             popup=f"{row['description']}<br><a href='{row['KML']}' target='_blank'>View KML File</a>",
         ).add_to(m)
 
-    # Parse KML and add polygons to the map
-    polygons = parse_kml(kml_url)
+    # Parse KML and add geometries to the map
+    geometries = parse_kml(kml_url)
     
-    for polygon in polygons:
-        # Convert shapely polygon object to a list of coordinates
-        coords = [(pt[1], pt[0]) for pt in polygon.exterior.coords]  # Lat, Lon format
-        folium.Polygon(locations=coords, color='blue', fill=True, fill_opacity=0.4).add_to(m)
+    for geometry in geometries:
+        # Add Points
+        if isinstance(geometry, Point):
+            folium.Marker(location=[geometry.y, geometry.x], popup="Point").add_to(m)
+        # Add LineStrings
+        elif isinstance(geometry, LineString):
+            coords = [(point[1], point[0]) for point in geometry.coords]
+            if coords:
+                folium.PolyLine(locations=coords, color='green').add_to(m)
+        # Add Polygons
+        elif isinstance(geometry, Polygon):
+            coords = [(pt[1], pt[0]) for pt in geometry.exterior.coords]  # Lat, Lon format
+            if coords:
+                folium.Polygon(locations=coords, color='blue', fill=True, fill_opacity=0.4).add_to(m)
 
     # Display the Folium map in Streamlit
     st_folium(m, width=700, height=500)
@@ -118,5 +135,5 @@ st.title("Scan Your Releafs' Token")
 if st.button("Show Token Details"):
     display_token_details()
 
-# Display detailed map with polygons
+# Display detailed map with all geometries
 display_detailed_map()
