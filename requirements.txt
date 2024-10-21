@@ -6,3 +6,4 @@ shapely
 requests
 streamlit-folium
 setuptools>=58.0.0
+beautifulsoup4
