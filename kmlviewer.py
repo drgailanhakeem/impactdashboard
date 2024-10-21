@@ -2,20 +2,22 @@ import pandas as pd
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-from fastkml import KML, Folder, Placemark  # Import necessary classes for KML parsing
+from fastkml import KML, Document, Folder, Placemark  # Import necessary classes for KML parsing
 import requests
 
 # Define the URL to your CSV file hosted on GitHub
 CSV_URL = "https://raw.githubusercontent.com/hawkarabdulhaq/impactdashboard/main/impactdata.csv"
 
-def extract_features_from_kml(kml_obj):
+def extract_features_from_kml(feature):
     """Recursively extract all features (placemarks, folders, etc.) from the KML."""
     all_features = []
-    for feature in kml_obj.features():
-        all_features.append(feature)  # Capture the feature, even if it has no geometry
-        if isinstance(feature, Folder):
-            for subfeature in feature.features():
-                all_features.append(subfeature)  # Capture subfeatures recursively
+    if isinstance(feature, Document) or isinstance(feature, Folder):
+        # Loop through all features inside a Document or Folder
+        for subfeature in feature.features():
+            all_features.extend(extract_features_from_kml(subfeature))
+    elif isinstance(feature, Placemark):
+        # Capture placemark features
+        all_features.append(feature)
     return all_features
 
 def parse_kml(kml_url):
@@ -38,7 +40,7 @@ def parse_kml(kml_url):
         kml_obj = KML()
         kml_obj.from_string(kml_data)
 
-        # Extract and return all features from the KML, not just geometries
+        # Extract and return all features from the KML, including from Document or Folder
         return extract_features_from_kml(kml_obj)
 
     except Exception as e:
