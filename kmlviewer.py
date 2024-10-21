@@ -40,6 +40,9 @@ def parse_kml(kml_url):
         kml_obj = KML()
         kml_obj.from_string(kml_data)
 
+        # Debug: Output first 500 characters of KML data for verification
+        st.write(f"KML Data: {kml_data[:500]}...")
+
         # Extract and return all features from the KML, including from Document or Folder
         return extract_features_from_kml(kml_obj)
 
@@ -60,6 +63,8 @@ def display_kml_map():
         st.error("No KML URL found in the CSV file.")
         return
 
+    st.write(f"Using KML URL: {kml_url}")  # Debug: Output the KML URL
+
     # Create a Folium map, centering on the first project location
     m = folium.Map(location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=12)
 
@@ -67,7 +72,7 @@ def display_kml_map():
     features = parse_kml(kml_url)
     
     if features:
-        st.write(f"Extracted Features: {features}")  # Debug: Output all features for inspection
+        st.write(f"Extracted Features Count: {len(features)}")  # Debug: Output number of features extracted
 
         for feature in features:
             if isinstance(feature, Placemark):
@@ -75,6 +80,8 @@ def display_kml_map():
                 description = feature.description if feature.description else "No Description"
                 geometry = feature.geometry
                 
+                st.write(f"Feature: {name}, Geometry: {geometry.geom_type if geometry else 'No Geometry'}")  # Debug: Output feature info
+
                 if geometry:
                     # Handle Points
                     if geometry.geom_type == 'Point':
