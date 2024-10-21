@@ -2,27 +2,14 @@ import pandas as pd
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-from fastkml import KML, Document, Folder, Placemark  # Import necessary classes for KML parsing
 import requests
-from bs4 import BeautifulSoup  # Additional library for handling namespaces
+import xml.etree.ElementTree as ET
 
 # Define the URL to your CSV file hosted on GitHub
 CSV_URL = "https://raw.githubusercontent.com/hawkarabdulhaq/impactdashboard/main/impactdata.csv"
 
-def extract_features_from_kml(feature):
-    """Recursively extract all features (placemarks, folders, etc.) from the KML."""
-    all_features = []
-    if isinstance(feature, Document) or isinstance(feature, Folder):
-        # Loop through all features inside a Document or Folder
-        for subfeature in feature.features():
-            all_features.extend(extract_features_from_kml(subfeature))
-    elif isinstance(feature, Placemark):
-        # Capture placemark features
-        all_features.append(feature)
-    return all_features
-
-def parse_kml(kml_url):
-    """Download and parse the KML file, extracting all features (not just geometries)."""
+def parse_kml_with_etree(kml_url):
+    """Download and parse the KML file using xml.etree.ElementTree, extracting placemarks."""
     if "drive.google.com" in kml_url:
         # Convert the Google Drive link to a direct download link
         file_id = kml_url.split("/d/")[1].split("/")[0]
@@ -30,43 +17,37 @@ def parse_kml(kml_url):
 
     # Download the KML file
     response = requests.get(kml_url)
-
     if response.status_code != 200:
         st.error("Failed to download the KML file.")
         return []
 
-    kml_data = response.text
-
-    # Debug: Output first 500 characters of KML data for verification
-    st.write(f"KML Data: {kml_data[:500]}...")
-
+    # Parse KML data using ElementTree
     try:
-        # Manually handle the KML namespaces using BeautifulSoup and lxml parser
-        soup = BeautifulSoup(kml_data, 'xml')
+        tree = ET.ElementTree(ET.fromstring(response.content))
+        root = tree.getroot()
 
-        # Extract all placemarks
-        placemarks = soup.find_all('Placemark')
+        # Namespace handling
+        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
 
-        # List to store extracted placemarks as objects
-        parsed_placemarks = []
+        # Extract placemarks
+        placemarks = []
+        for placemark in root.findall('.//kml:Placemark', ns):
+            name = placemark.find('kml:name', ns)
+            description = placemark.find('kml:description', ns)
+            point = placemark.find('.//kml:Point/kml:coordinates', ns)
 
-        for placemark in placemarks:
-            name = placemark.find('name').text if placemark.find('name') else 'Unnamed Placemark'
-            description = placemark.find('description').text if placemark.find('description') else 'No Description'
-            point = placemark.find('Point')
-            
-            # Handling geometries (in this case, Points)
-            if point:
-                coords = point.find('coordinates').text.strip().split(',')
-                lat, lon = float(coords[1]), float(coords[0])
-                parsed_placemarks.append({'name': name, 'description': description, 'geometry': 'Point', 'lat': lat, 'lon': lon})
-            else:
-                # You can add more handling for LineStrings, Polygons, etc.
-                parsed_placemarks.append({'name': name, 'description': description, 'geometry': 'No Geometry'})
+            if point is not None:
+                coords = point.text.strip().split(',')
+                lon, lat = float(coords[0]), float(coords[1])
+                placemarks.append({
+                    'name': name.text if name is not None else 'Unnamed Placemark',
+                    'description': description.text if description is not None else 'No Description',
+                    'lat': lat,
+                    'lon': lon
+                })
+        return placemarks
 
-        return parsed_placemarks
-
-    except Exception as e:
+    except ET.ParseError as e:
         st.error(f"Error parsing KML file: {e}")
         return []
 
@@ -89,24 +70,21 @@ def display_kml_map():
     m = folium.Map(location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=12)
 
     # Parse and display the KML data
-    features = parse_kml(kml_url)
-    
-    if features:
-        st.write(f"Extracted Features Count: {len(features)}")  # Debug: Output number of features extracted
+    placemarks = parse_kml_with_etree(kml_url)
 
-        for feature in features:
-            st.write(f"Feature: {feature['name']}, Geometry: {feature['geometry']}")  # Debug: Output feature info
+    if placemarks:
+        st.write(f"Extracted Placemarks Count: {len(placemarks)}")  # Debug: Output number of placemarks extracted
 
-            if feature['geometry'] == 'Point':
-                folium.Marker(
-                    location=[feature['lat'], feature['lon']], 
-                    popup=f"<b>{feature['name']}</b><br>{feature['description']}"
-                ).add_to(m)
-            else:
-                # Handling other geometries (e.g., LineString, Polygon) can be added here
-                pass
+        for placemark in placemarks:
+            st.write(f"Placemark: {placemark['name']}, Coordinates: ({placemark['lat']}, {placemark['lon']})")  # Debug: Output placemark info
+
+            # Add marker to the map
+            folium.Marker(
+                location=[placemark['lat'], placemark['lon']],
+                popup=f"<b>{placemark['name']}</b><br>{placemark['description']}"
+            ).add_to(m)
     else:
-        st.error("No valid features found in the KML file.")
+        st.error("No valid placemarks found in the KML file.")
 
     # Display the map in Streamlit
     st_folium(m, width=700, height=500)
