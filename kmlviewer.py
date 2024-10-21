@@ -41,9 +41,9 @@ def parse_kml(kml_url):
     st.write(f"KML Data: {kml_data[:500]}...")
 
     try:
-        # Manually handle the KML namespaces using BeautifulSoup
+        # Manually handle the KML namespaces using BeautifulSoup and lxml parser
         soup = BeautifulSoup(kml_data, 'xml')
-        
+
         # Extract all placemarks
         placemarks = soup.find_all('Placemark')
 
