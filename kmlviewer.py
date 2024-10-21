@@ -3,24 +3,23 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 from fastkml import KML, Folder, Placemark  # Import necessary classes for KML parsing
-from shapely.geometry import Point, LineString, Polygon
 import requests
 
 # Define the URL to your CSV file hosted on GitHub
 CSV_URL = "https://raw.githubusercontent.com/hawkarabdulhaq/impactdashboard/main/impactdata.csv"
 
-def extract_geometries_from_feature(feature):
-    """Recursively extract geometries from KML features, handling folders and placemarks."""
-    geometries = []
-    if isinstance(feature, Placemark) and feature.geometry:
-        geometries.append(feature.geometry)
-    elif isinstance(feature, Folder):
-        for subfeature in feature.features():
-            geometries.extend(extract_geometries_from_feature(subfeature))
-    return geometries
+def extract_features_from_kml(kml_obj):
+    """Recursively extract all features (placemarks, folders, etc.) from the KML."""
+    all_features = []
+    for feature in kml_obj.features():
+        all_features.append(feature)  # Capture the feature, even if it has no geometry
+        if isinstance(feature, Folder):
+            for subfeature in feature.features():
+                all_features.append(subfeature)  # Capture subfeatures recursively
+    return all_features
 
 def parse_kml(kml_url):
-    """Download and parse the KML file, extracting all geometries (polygons, lines, points)."""
+    """Download and parse the KML file, extracting all features (not just geometries)."""
     if "drive.google.com" in kml_url:
         # Convert the Google Drive link to a direct download link
         file_id = kml_url.split("/d/")[1].split("/")[0]
@@ -39,12 +38,9 @@ def parse_kml(kml_url):
         kml_obj = KML()
         kml_obj.from_string(kml_data)
 
-        geometries = []
-        # Loop through the KML features and extract geometries recursively
-        for feature in kml_obj.features():
-            geometries.extend(extract_geometries_from_feature(feature))
+        # Extract and return all features from the KML, not just geometries
+        return extract_features_from_kml(kml_obj)
 
-        return geometries
     except Exception as e:
         st.error(f"Error parsing KML file: {e}")
         return []
@@ -66,23 +62,40 @@ def display_kml_map():
     m = folium.Map(location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=12)
 
     # Parse and display the KML data
-    geometries = parse_kml(kml_url)
+    features = parse_kml(kml_url)
     
-    if geometries:
-        for geometry in geometries:
-            # Handle Points
-            if isinstance(geometry, Point):
-                folium.Marker(location=[geometry.y, geometry.x], popup="Point").add_to(m)
-            # Handle LineStrings
-            elif isinstance(geometry, LineString):
-                coords = [(point[1], point[0]) for point in geometry.coords]
-                folium.PolyLine(locations=coords, color='green').add_to(m)
-            # Handle Polygons
-            elif isinstance(geometry, Polygon):
-                coords = [(pt[1], pt[0]) for pt in geometry.exterior.coords]
-                folium.Polygon(locations=coords, color='blue', fill=True, fill_opacity=0.4).add_to(m)
+    if features:
+        st.write(f"Extracted Features: {features}")  # Debug: Output all features for inspection
+
+        for feature in features:
+            if isinstance(feature, Placemark):
+                name = feature.name if feature.name else "Unnamed Placemark"
+                description = feature.description if feature.description else "No Description"
+                geometry = feature.geometry
+                
+                if geometry:
+                    # Handle Points
+                    if geometry.geom_type == 'Point':
+                        folium.Marker(
+                            location=[geometry.y, geometry.x], 
+                            popup=f"<b>{name}</b><br>{description}"
+                        ).add_to(m)
+                    # Handle LineStrings
+                    elif geometry.geom_type == 'LineString':
+                        coords = [(point[1], point[0]) for point in geometry.coords]
+                        folium.PolyLine(locations=coords, color='green').add_to(m)
+                    # Handle Polygons
+                    elif geometry.geom_type == 'Polygon':
+                        coords = [(pt[1], pt[0]) for pt in geometry.exterior.coords]
+                        folium.Polygon(locations=coords, color='blue', fill=True, fill_opacity=0.4).add_to(m)
+                else:
+                    # No geometry, just display metadata as a marker at a default location
+                    folium.Marker(
+                        location=[df['Latitude'].mean(), df['Longitude'].mean()], 
+                        popup=f"<b>{name}</b><br>{description}"
+                    ).add_to(m)
     else:
-        st.error("No valid geometries found in the KML file.")
+        st.error("No valid features found in the KML file.")
 
     # Display the map in Streamlit
     st_folium(m, width=700, height=500)
