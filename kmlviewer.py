@@ -2,12 +2,22 @@ import pandas as pd
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-from fastkml import KML  # Import only the KML class
+from fastkml import KML, Folder, Placemark  # Import necessary classes for KML parsing
 from shapely.geometry import Point, LineString, Polygon
 import requests
 
 # Define the URL to your CSV file hosted on GitHub
 CSV_URL = "https://raw.githubusercontent.com/hawkarabdulhaq/impactdashboard/main/impactdata.csv"
+
+def extract_geometries_from_feature(feature):
+    """Recursively extract geometries from KML features, handling folders and placemarks."""
+    geometries = []
+    if isinstance(feature, Placemark) and feature.geometry:
+        geometries.append(feature.geometry)
+    elif isinstance(feature, Folder):
+        for subfeature in feature.features():
+            geometries.extend(extract_geometries_from_feature(subfeature))
+    return geometries
 
 def parse_kml(kml_url):
     """Download and parse the KML file, extracting all geometries (polygons, lines, points)."""
@@ -30,10 +40,9 @@ def parse_kml(kml_url):
         kml_obj.from_string(kml_data)
 
         geometries = []
-        # Loop through the KML features and extract geometries
+        # Loop through the KML features and extract geometries recursively
         for feature in kml_obj.features():
-            for placemark in feature.features():
-                geometries.append(placemark.geometry)
+            geometries.extend(extract_geometries_from_feature(feature))
 
         return geometries
     except Exception as e:
@@ -72,7 +81,6 @@ def display_kml_map():
             elif isinstance(geometry, Polygon):
                 coords = [(pt[1], pt[0]) for pt in geometry.exterior.coords]
                 folium.Polygon(locations=coords, color='blue', fill=True, fill_opacity=0.4).add_to(m)
-
     else:
         st.error("No valid geometries found in the KML file.")
 
